@@ -6,9 +6,11 @@
 ![image](https://github.com/user-attachments/assets/3d019af2-ff9e-426b-b3c2-4133264b6ec4)
 
 
+
 ### **About the Project**
 
-Falling Stars is an interactive star visualization built with Three.js. It simulates a night sky filled with stars that dynamically react to light pollution levels, allowing users to experience the loss of visible stars due to urban light pollution. This vizualization is part of a larger data analysis project on light pollution.
+Falling Stars is an interactive star visualization built with Three.js. It simulates a night sky filled with stars that dynamically react to light pollution levels, allowing users to experience the loss of visible stars due to urban light pollution. This vizualization is part of a larger data analysis project on light pollution aiming to connect rationalist analysis with an emotional component.
+
 
 
 ### **Features**
@@ -22,6 +24,7 @@ Falling Stars is an interactive star visualization built with Three.js. It simul
 **Responsive UI** that works across devices.
 
 **Orbit Controls** for free camera movement.
+
 
 
 ### **Technologies Used**
