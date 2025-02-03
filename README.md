@@ -1,4 +1,4 @@
-Falling Stars - Interactive Star Map
+#**Falling Stars - Interactive Star Map**
 
 Live Demo: [Falling Stars](https://falling-stars-xi.vercel.app/)
 
