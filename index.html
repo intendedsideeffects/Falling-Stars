@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Star Map</title>
+    <style>
+        /* Basic styling for the body and canvas */
+        body { margin: 0; overflow: hidden; background-color: #010203; }
+        canvas { display: block; }
+
+        /* Styling for the light pollution control container */
+        #light-pollution-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            color: #e6dfc8; /* Warmer, more toned down color */
+            padding: 12px;
+            border-radius: 4px;
+            text-align: center;
+            width: 300px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 14px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Styling for labels */
+        label {
+            font-weight: 300;
+        }
+
+        /* Styling for the range input (slider) */
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            /* Change to a warmer, more toned down gradient */
+            background: linear-gradient(to right, #010203, #d2c59a);
+            border-radius: 2px;
+            opacity: 0.6;
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 10px 0;
+        }
+
+        /* Styling for the slider thumb on WebKit browsers */
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #d2c59a; /* Warmer, more toned down color */
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        /* Styling for the slider thumb on Firefox */
+        input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            background: #d2c59a; /* Warmer, more toned down color */
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+
+        /* Styling for the fallen stars counter */
+        #fallen-stars-counter {
+            margin-top: 10px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Light pollution control UI -->
+    <div id="light-pollution-container">
+        <label for="lightPollution">Light Pollution:</label>
+        <input type="range" id="lightPollution" min="1" max="9" step="0.1" value="1">
+        <div id="fallen-stars-counter">Fallen Stars: 0</div>
+    </div>
+
+    <!-- Include Three.js library and OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        // Set up the Three.js scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Configuration for star visualization
+        const starConfig = {
+            maxMagnitude: 6.7,    
+            minMagnitude: -1.5,   
+            maxStarSize: 16.9,    // Increased from 13.9 for more prominent stars
+            minStarSize: 3.0,     // Slightly increased from 2.3
+            baseStarSize: 4.5,    // Increased from 3.0
+            brightestThreshold: 4.5,
+            brightThreshold: 2.5,
+            brightestStarColor: 0xffffff,
+            brightStarColor: 0xe6f0ff,
+            fadeFactor: 2.0      // Adjusted for better visibility
+        };
+
+        const radius = 140; // Radius of the star sphere
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        let starPoints; // Will hold the Three.js Points object for stars
+        let fallenStarsCount = 0; // Counter for fallen stars
+
+        // Function to convert B-V color index to RGB color
+        function bvToColor(bv, brightness) {
+            const rand = Math.random();
+            let color;
+            
+            // Adjusted color distribution based on the reference image
+            if (brightness < 2.0) {
+                // Brightest stars - pure white with increased intensity
+                color = new THREE.Color(0xffffff);
+                color.multiplyScalar(1.2); // Make brightest stars more intense
+            } else if (rand < 0.4) {
+                // Golden/orange stars with increased saturation
+                color = new THREE.Color(0xffd700);
+                color.multiplyScalar(1.1);
+            } else if (rand < 0.7) {
+                // Cyan/light blue stars with increased brightness
+                color = new THREE.Color(0x87ceeb);
+                color.multiplyScalar(1.15);
+            } else {
+                // White stars with slight increase in brightness
+                color = new THREE.Color(0xf8f8ff);
+                color.multiplyScalar(1.1);
+            }
+            
+            // Adjusted fade effect to maintain more visibility
+            const fadeFactor = Math.max(0.2, 1 - (brightness / starConfig.maxMagnitude));
+            color.multiplyScalar(fadeFactor * 0.85 + 0.25); // Increased minimum brightness
+            
+            return color.getHex();
+        }
+
+        // Function to load star data from CSV file
+        async function loadStars() {
+            const response = await fetch('stars.csv');
+            const text = await response.text();
+            const rows = text.split('\n').slice(1);
+
+            return rows
+                .map((row, index) => {
+                    const [, , , , , Vmag, , , RAdeg, DEdeg, , B_V] = row.split(',');
+                    const brightness = parseFloat(Vmag);
+                    const bv = parseFloat(B_V);
+                    const x = radius * Math.cos(parseFloat(RAdeg) * (Math.PI / 180)) * Math.cos(parseFloat(DEdeg) * (Math.PI / 180));
+                    const y = radius * Math.sin(parseFloat(DEdeg) * (Math.PI / 180));
+                    const z = radius * Math.sin(parseFloat(RAdeg) * (Math.PI / 180)) * Math.cos(parseFloat(DEdeg) * (Math.PI / 180));
+
+                    let size = Math.max(
+                        starConfig.minStarSize * (1.1 - brightness / starConfig.maxMagnitude), // Increased base size
+                        starConfig.maxStarSize * Math.pow(0.75, brightness) // Adjusted power for slower size reduction
+                    );
+
+                    // If brightness > 5.0, make stars even smaller
+                    if (brightness > 5.0) {
+                        size *= 0.7;
+                    }
+
+                    return {
+                        id: index + 1,
+                        x, y, z,
+                        originalY: y,
+                        brightness,
+                        color: bvToColor(bv, brightness),
+                        size: size,
+                        fallSpeed: Math.random() * 10 + 15,
+                        isFallen: false, // New property to track fallen stars
+                    };
+                })
+                .filter(star => !isNaN(star.x) && !isNaN(star.y) && !isNaN(star.z) && 
+                                star.brightness <= starConfig.maxMagnitude && 
+                                star.brightness >= starConfig.minMagnitude);
+        }
+
+        // Function to create the star field using Three.js
+        function createStarField(stars) {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(stars.length * 3);
+            const colors = new Float32Array(stars.length * 3);
+            const sizes = new Float32Array(stars.length);
+
+            stars.forEach((star, i) => {
+                positions[i * 3] = star.x;
+                positions[i * 3 + 1] = star.y;
+                positions[i * 3 + 2] = star.z;
+                
+                const color = new THREE.Color(star.color);
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+                
+                sizes[i] = star.size;
+            });
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            // Create a custom shader material for the stars
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    attenuation: { value: true },
+                    starMin: { value: starConfig.minStarSize },
+                    starMax: { value: starConfig.maxStarSize },
+                    starMinBrightnes: { value: starConfig.maxMagnitude },
+                    starFadeDactor: { value: starConfig.fadeFactor },
+                    pointTexture: { 
+                        value: new THREE.TextureLoader().load("https://threejs.org/examples/textures/sprites/circle.png") 
+                    }
+                },
+                vertexShader: `
+                    uniform float starMin;
+                    uniform float starMax;
+                    uniform float starMinBrightnes;
+                    uniform float starFadeDactor;
+                    uniform bool attenuation;
+
+                    attribute float size;
+                    attribute vec3 color;
+
+                    varying vec3 vColor;
+                    varying float vSize;
+
+                    void main() {
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_Position = projectionMatrix * mvPosition;
+
+                        // Enhanced size attenuation
+                        float dist = length(mvPosition.xyz);
+                        float sizeScale = 1.0;
+                        
+                        if (attenuation) {
+                            sizeScale = 130.0 / dist; // Increased from 120.0 for slightly larger stars
+                        }
+
+                        // Apply fade factor to size
+                        float fadeSize = size * (1.0 + starFadeDactor * 0.08); // Reduced fade effect
+                        gl_PointSize = fadeSize * sizeScale;
+                        
+                        vColor = color;
+                        vSize = fadeSize;
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D pointTexture;
+                    varying vec3 vColor;
+                    varying float vSize;
+
+                    void main() {
+                        vec2 uv = vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y);
+                        vec4 tex = texture2D(pointTexture, uv);
+                        
+                        // Enhanced glow effect with increased intensity
+                        float alpha = tex.a;
+                        alpha *= smoothstep(0.0, 0.45, alpha); // Adjusted for stronger core
+                        
+                        // Add slight bloom effect
+                        vec3 finalColor = vColor * (1.0 + (1.0 - alpha) * 0.5);
+                        
+                        gl_FragColor = vec4(finalColor, alpha);
+                    }
+                `,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            starPoints = new THREE.Points(geometry, material);
+            scene.add(starPoints);
+            return positions;
+        }
+
+        // Main initialization function
+        async function init() {
+            const stars = await loadStars();
+            const originalPositions = createStarField(stars);
+
+            const lightPollutionSlider = document.getElementById('lightPollution');
+            const fallenStarsCounter = document.getElementById('fallen-stars-counter');
+
+            // Animation function
+            function animate() {
+                const pollutionLevel = parseFloat(lightPollutionSlider.value);
+                const positions = starPoints.geometry.attributes.position.array;
+
+                // Convert pollution level to magnitude scale
+                // Map slider range (1-9) to magnitude range (7.0 to -1.5)
+                // When slider is at 1 (left), pollutionMagnitude will be 7.0 (all stars visible)
+                // When slider is at 9 (right), pollutionMagnitude will be -1.5 (most stars fall)
+                const pollutionMagnitude = 7.0 - ((pollutionLevel - 1) / 8) * 8.5;
+
+                fallenStarsCount = 0; // Reset fallen stars count
+
+                for (let i = 0; i < stars.length; i++) {
+                    const star = stars[i];
+                    const fallSpeed = star.fallSpeed * 0.1;
+                    
+                    // Stars with higher magnitude (dimmer) will fall first
+                    // Lower magnitude (brighter) stars will stay visible longer
+                    if (star.brightness > pollutionMagnitude) {
+                        positions[i * 3 + 1] -= fallSpeed;
+                        if (positions[i * 3 + 1] < -radius * 2) {
+                            positions[i * 3 + 1] = -radius * 2;
+                            star.isFallen = true;
+                        }
+                        if (star.isFallen) {
+                            fallenStarsCount++;
+                        }
+                    } else {
+                        if (positions[i * 3 + 1] < star.originalY) {
+                            positions[i * 3 + 1] += fallSpeed;
+                            if (positions[i * 3 + 1] > star.originalY) {
+                                positions[i * 3 + 1] = star.originalY;
+                                star.isFallen = false;
+                            }
+                        }
+                    }
+                }
+
+                // Update fallen stars counter
+                fallenStarsCounter.textContent = `Fallen Stars: ${fallenStarsCount}`;
+
+                starPoints.geometry.attributes.position.needsUpdate = true;
+                controls.update();
+                renderer.render(scene, camera);
+                requestAnimationFrame(animate);
+            }
+
+            camera.position.z = 300;
+            animate();
+        }
+
+        // Handle window resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
